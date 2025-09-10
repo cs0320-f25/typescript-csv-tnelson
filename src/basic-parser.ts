@@ -1,37 +1,49 @@
 import * as fs from "fs";
 import * as readline from "readline";
+import z, { ZodSafeParseError, ZodSafeParseSuccess } from 'zod'
 
 /**
- * This is a JSDoc comment. Similar to JavaDoc, it documents a public-facing
- * function for others to use. Most modern editors will show the comment when 
- * mousing over this function name. Try it in run-parser.ts!
  * 
- * File I/O in TypeScript is "asynchronous", meaning that we can't just
- * read the file and return its contents. You'll learn more about this 
- * in class. For now, just leave the "async" and "await" where they are. 
- * You shouldn't need to alter them.
+ * SPRINT 1 VERSION (Prototype)
+ * 
+ * Parse a CSV-formatted file into an array of row values. 
+ * Sprint 1 does not include headers, and so the indexes of the row values
+ * are not well-defined UNLESS THE SCHEMA DOES TRANSLATION. 
+ * 
+ * If no schema is provided, the default behavior is as in the starter code.
  * 
  * @param path The path to the file being loaded.
- * @returns a "promise" to produce a 2-d array of cell values
+ * @param schema (Optional) A Zod schema for validating an array (for a row) and producing something of the expected type T
+ * @returns a "promise" to produce a 2-d array. If a schema is provided, each element will be either a Zod parse result. If a schema is not provided, each element will be a string[].
  */
-export async function parseCSV(path: string): Promise<string[][]> {
-  // This initial block of code reads from a file in Node.js. The "rl"
-  // value can be iterated over in a "for" loop. 
+export async function parseCSV<T>(path: string, givenSchema?: z.ZodType<T>): 
+   Promise<(ZodSafeParseSuccess<T> | ZodSafeParseError<T>)[] | string[][]> {
   const fileStream = fs.createReadStream(path);
   const rl = readline.createInterface({
     input: fileStream,
     crlfDelay: Infinity, // handle different line endings
   });
   
-  // Create an empty array to hold the results
-  let result = []
-  
-  // We add the "await" here because file I/O is asynchronous. 
-  // We need to force TypeScript to _wait_ for a row before moving on. 
-  // More on this in class soon!
+  // Proceed in stages: first get a string[][], and then convert it if the schema is present.
+  // This allows TypeScript to infer the union above. If we tried to do this all at once, 
+  // the inferred type is Promise<(ZodSafeParseSuccess<T> | ZodSafeParseError<T> | string[])[]>.
+  // (Amusingly, this problem goes away in sprint 2!)
+
+  // Give a type here and for convertedResult below, or it will implicitly be any[].
+  const rawResult: string[][] = []
   for await (const line of rl) {
-    const values = line.split(",").map((v) => v.trim());
-    result.push(values)
+    const row = line.split(",").map((v) => v.trim())
+    rawResult.push(row)
   }
-  return result
+  
+  // Now we have the string[][] parsed. Either process it via a schema, or return it.
+  if(givenSchema !== undefined) {
+    // We have to tell TypeScript what kind of empty array this is.
+    const convertedResult: (ZodSafeParseSuccess<T> | ZodSafeParseError<T>)[] = []
+    for(const row of rawResult) 
+        convertedResult.push(givenSchema.safeParse(row)) 
+    return convertedResult
+  }
+  
+  return rawResult
 }
